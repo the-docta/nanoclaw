@@ -102,17 +102,17 @@ function buildVolumeMounts(
       containerPath: '/workspace/group',
       readonly: false,
     });
+  }
 
-    // Global memory directory (read-only for non-main)
-    // Only directory mounts are supported, not file mounts
-    const globalDir = path.join(GROUPS_DIR, 'global');
-    if (fs.existsSync(globalDir)) {
-      mounts.push({
-        hostPath: globalDir,
-        containerPath: '/workspace/global',
-        readonly: true,
-      });
-    }
+  // Global memory directory (writable for all groups)
+  // Only directory mounts are supported, not file mounts
+  const globalDir = path.join(GROUPS_DIR, 'global');
+  if (fs.existsSync(globalDir)) {
+    mounts.push({
+      hostPath: globalDir,
+      containerPath: '/workspace/global',
+      readonly: false,
+    });
   }
 
   // Per-group Claude sessions directory (isolated from other groups)
@@ -226,6 +226,7 @@ function buildVolumeMounts(
 async function buildContainerArgs(
   mounts: VolumeMount[],
   containerName: string,
+  isMain: boolean,
   agentIdentifier?: string,
 ): Promise<string[]> {
   const args: string[] = ['run', '-i', '--rm', '--name', containerName];
@@ -254,9 +255,14 @@ async function buildContainerArgs(
   // Run as host user so bind-mounted files are accessible.
   // Skip when running as root (uid 0), as the container's node user (uid 1000),
   // or when getuid is unavailable (native Windows without WSL).
+  //
+  // Non-main groups do NOT override --user: on macOS with Docker Desktop / VirtioFS,
+  // host uid 501 files appear as uid 1000 (node) inside containers. Forcing --user 501
+  // would mismatch the file ownership seen inside the container and break writes.
+  // Main group needs host-uid because it writes back to the project root on the host.
   const hostUid = process.getuid?.();
   const hostGid = process.getgid?.();
-  if (hostUid != null && hostUid !== 0 && hostUid !== 1000) {
+  if (isMain && hostUid != null && hostUid !== 0 && hostUid !== 1000) {
     args.push('--user', `${hostUid}:${hostGid}`);
     args.push('-e', 'HOME=/home/node');
   }
@@ -295,6 +301,7 @@ export async function runContainerAgent(
   const containerArgs = await buildContainerArgs(
     mounts,
     containerName,
+    input.isMain,
     agentIdentifier,
   );
 
