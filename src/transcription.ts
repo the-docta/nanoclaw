@@ -3,7 +3,11 @@ import { logger } from './logger.js';
 
 const FALLBACK = '[Sprachnachricht – Transkription nicht verfügbar]';
 
-async function transcribeBuffer(buffer: Buffer, filename: string, mimeType: string): Promise<string | null> {
+async function transcribeBuffer(
+  buffer: Buffer,
+  filename: string,
+  mimeType: string,
+): Promise<string | null> {
   const env = readEnvFile(['OPENAI_API_KEY']);
   const apiKey = env.OPENAI_API_KEY;
 
